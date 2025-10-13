@@ -1,0 +1,379 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+
+<head>
+  <meta charset="UTF-8">
+  <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@500;700&display=swap" rel="stylesheet">
+  <title>Crédito do Trabalhador OFF - Consig Tech</title>
+  <style>
+    html,
+    body {
+      height: 100%;
+      margin: 0;
+      padding: 0;
+      font-family: 'Poppins', sans-serif;
+      background: linear-gradient(135deg, #ad0026, #e9e9e9);
+      background-attachment: fixed;
+    }
+
+    .container {
+      max-width: 750px;
+      margin: 40px auto;
+      background: #ffffff;
+      padding: 20px 25px;
+      border-radius: 14px;
+      box-shadow: 0 4px 25px rgba(0, 0, 0, 0.15);
+    }
+
+    h1 {
+      color: #800035;
+      text-align: center;
+      font-weight: 800;
+      margin: 10px 0 25px;
+    }
+
+    textarea,
+    button {
+      width: 100%;
+      font-size: 16px;
+      margin-top: 10px;
+    }
+
+    textarea {
+      height: 180px;
+      padding: 10px;
+      border-radius: 6px;
+      border: 1px solid #ddd;
+      resize: vertical;
+      font-family: 'Poppins', sans-serif;
+    }
+
+    button {
+      background: green;
+      color: white;
+      padding: 12px;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+      font-weight: bold;
+      transition: background 0.2s, transform 0.1s;
+    }
+
+    button:hover {
+      background: darkgreen;
+      transform: scale(1.02);
+    }
+
+    .result {
+      margin-top: 20px;
+      background: #fffeee;
+      padding: 15px;
+      border-radius: 6px;
+      font-family: monospace;
+      max-height: 420px;
+      overflow-y: auto;
+    }
+
+    .registro {
+      background: #f9fff9;
+      border-left: 6px solid #3aa655;
+      border-radius: 8px;
+      box-shadow: 0 2px 6px rgba(0, 0, 0, 0.08);
+      padding: 10px 14px;
+      margin-bottom: 10px;
+      word-wrap: break-word;
+    }
+
+    .registro.erro {
+      background: #fff7f7;
+      border-left-color: #e94c4c;
+    }
+
+    .muted {
+      color: #666;
+      font-size: 13px;
+      margin-top: 6px;
+    }
+  </style>
+</head>
+
+<body>
+  <div class="container">
+    <div style="display:flex;align-items:center; padding-left: 50px; margin-bottom:20px;">
+  <img src="/static/logo.png" alt="Logo" style="height:130px;">
+  <h1>Crédito do Trabalhador OFF</h1>
+    </div>
+
+    <label for="cpfs" style="font-weight:bold;">CPFs:</label>
+    <textarea id="cpfs" placeholder="Ex:&#10;12345678901&#10;98765432100"></textarea>
+
+    <button style="background-color:#199919;" onclick="consultar()">Consultar</button>
+    <button style="background-color:rgb(197,27,27);" onclick="alternarPausa()" id="btnPausar">Pausar</button>
+    <hr>
+    <button style="background-color:#d4af08;color:#292828;" onclick="recuperarConsultas()">Recuperar últimas</button>
+    <button style="background:#555;" onclick="baixarExcel()">Baixar Excel</button>
+    <button style="background:#929191;" onclick="limparCampos()">Limpar</button>
+
+    <div style="margin-top:20px;">
+      <div style="height:20px;background:#ccc;border-radius:10px;overflow:hidden;">
+        <div id="progressBar" style="width:0%;height:100%;background:#db3172;"></div>
+      </div>
+      <p id="progressText" style="text-align:right;font-size:14px;">0%</p>
+      <p id="contador" style="font-weight:bold;margin-top:10px;"></p>
+      <p id="loteInfo" class="muted"></p>
+    </div>
+
+    <div id="result" class="result"></div>
+  </div>
+
+  <script>
+    let resultadosGerais = [];
+    let pausado = false;
+    let currentLoteId = null;
+    let consultaAtiva = true;
+    let atualizandoStatus = false;
+
+    function normalizarCPF(cpf) {
+      return (cpf || "").replace(/\D/g, "").padStart(11, "0");
+    }
+
+    function atualizarContador() {
+      const elegiveis = resultadosGerais.filter(r =>
+        (r.elegivel || "").toString().toUpperCase().includes("SIM")
+      ).length;
+
+      const naoElegiveis = resultadosGerais.filter(r =>
+        !(r.elegivel || "").toString().toUpperCase().includes("SIM")
+      ).length;
+
+      document.getElementById("contador").innerHTML =
+        `Elegíveis: ${elegiveis} | Não elegíveis: ${naoElegiveis}`;
+    }
+
+    function pushLinha(html, cpf, isErro = false) {
+      const box = document.getElementById("result");
+      const cpfNormalizado = normalizarCPF(cpf);
+      const existente = document.querySelector(`[data-cpf='${cpfNormalizado}']`);
+
+      const campos = [
+        "Nome:",
+        "Nascimento:",
+        "Admissão:",
+        "Valor Liberado:",
+        "Margem:",
+        "Elegível:",
+        "Status:",
+        "Mensagem:"
+      ];
+
+      const todosVazios = campos.every(campo => {
+        const regex = new RegExp(`${campo}\\s*-`, "i");
+        return regex.test(html);
+      });
+
+      if (todosVazios) return;
+
+      const temp = document.createElement("div");
+      temp.innerHTML = html.trim();
+      const novoEl = temp.firstElementChild;
+      novoEl.setAttribute("data-cpf", cpfNormalizado);
+
+      if (existente) {
+        existente.replaceWith(novoEl);
+      } else {
+        box.appendChild(novoEl);
+      }
+
+      box.scrollTop = box.scrollHeight;
+      atualizarContador();
+    }
+
+    function alternarPausa() {
+      pausado = !pausado;
+      const btn = document.getElementById("btnPausar");
+      btn.innerText = pausado ? "Continuar" : "Pausar";
+      btn.style.backgroundColor = pausado ? "#1E90FF" : "rgb(197,27,27)";
+    }
+
+    async function consultar() {
+      const cpfs = document.getElementById("cpfs").value
+        .split("\n")
+        .map(c => normalizarCPF(c.trim()))
+        .filter(c => c !== "");
+
+      if (cpfs.length === 0) {
+        alert("Insira pelo menos um CPF para consultar.");
+        return;
+      }
+
+      const progressBar = document.getElementById("progressBar");
+      const progressText = document.getElementById("progressText");
+      const total = cpfs.length;
+      let concluidos = 0;
+
+      resultadosGerais = [];
+      consultaAtiva = true;
+      currentLoteId = `L${Date.now()}`;
+      document.getElementById("loteInfo").textContent = `Lote atual: ${currentLoteId}`;
+      document.getElementById("result").innerHTML = "<i>Iniciando consultas...</i><br><br>";
+
+      await new Promise(r => setTimeout(r, 300));
+      consultaAtiva = true;
+
+      for (const cpf of cpfs) {
+        if (!consultaAtiva) break;
+        while (pausado) await new Promise(r => setTimeout(r, 300));
+
+        try {
+          const res = await fetch("/consultar", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ cpfs: [cpf], lote_id: currentLoteId })
+          });
+
+          const dados = await res.json();
+          const r = (dados && Array.isArray(dados) && dados.length > 0) ? dados[0] : null;
+          if (!r) continue;
+
+          r.CPF = normalizarCPF(r.CPF);
+
+          const idx = resultadosGerais.findIndex(x => x.CPF === r.CPF);
+          if (idx >= 0) resultadosGerais[idx] = r;
+          else resultadosGerais.push(r);
+
+          const info = gerarHtmlCpf(r);
+          pushLinha(info, r.CPF, (r.status || "").toLowerCase() !== "autorizado");
+
+        } catch (e) {
+          console.error("Erro consulta:", e);
+        }
+
+        concluidos++;
+        const progresso = Math.round((concluidos / total) * 100);
+        progressBar.style.width = `${progresso}%`;
+        progressText.innerText = `${progresso}%`;
+
+        await new Promise(r => setTimeout(r, 2500));
+      }
+
+      pushLinha("<div class='registro'><b>✅ Consultas finalizadas.</b></div>", "fim");
+    }
+
+    function gerarHtmlCpf(r) {
+      const corStatus = (r.status || "").toLowerCase().includes("autorizado")
+        ? "green"
+        : (r.status || "").toLowerCase().includes("pendente")
+          ? "orange"
+          : "red";
+
+      return `
+    <div class="registro" style="border-left:5px solid ${corStatus};" data-cpf="${r.CPF}">
+      <b>CPF:</b> ${r.CPF}<br>
+      <b>Nome:</b> ${r.nome || '-'}<br>
+      ${r.data_nascimento ? `<b>Nascimento:</b> ${r.data_nascimento}<br>` : ''}
+      ${r.data_admissao ? `<b>Admissão:</b> ${r.data_admissao}<br>` : ''}
+      ${r.valor_liberado ? `<b>Valor Liberado:</b> ${r.valor_liberado}<br>` : ''}
+      ${r.margem ? `<b>Margem:</b> ${r.margem}<br>` : ''}
+      ${r.elegivel ? `<b>Elegível:</b> ${r.elegivel}<br>` : ''}
+      <b>Status:</b> <span style="color:${corStatus};font-weight:bold;">${r.status || '-'}</span><br>
+      <b>Mensagem:</b> ${r.mensagem || '-'}
+    </div>`;
+    }
+
+    async function atualizarStatusLote() {
+      if (atualizandoStatus || !currentLoteId) return;
+      atualizandoStatus = true;
+
+      try {
+        const res = await fetch(`/status-lote?lote_id=${encodeURIComponent(currentLoteId)}`);
+        if (!res.ok) return;
+        const dados = await res.json();
+
+        dados.forEach(r => {
+          const cpfNorm = normalizarCPF(r.CPF);
+          const corStatus = (r.Status || "").toLowerCase().includes("autorizado")
+            ? "green"
+            : (r.Status || "").toLowerCase().includes("pendente")
+              ? "orange"
+              : "red";
+
+          const html = `
+        <div class="registro" style="border-left:5px solid ${corStatus};" data-cpf="${cpfNorm}">
+          <b>CPF:</b> ${cpfNorm}<br>
+          <b>Nome:</b> ${r["Nome"] || '-'}<br>
+          ${r["Data Nascimento"] ? `<b>Nascimento:</b> ${r["Data Nascimento"]}<br>` : ''}
+          ${r["Data Admissao"] ? `<b>Admissão:</b> ${r["Data Admissao"]}<br>` : ''}
+          ${r["Valor Liberado"] ? `<b>Valor Liberado:</b> ${r["Valor Liberado"]}<br>` : ''}
+          ${r["Margem"] ? `<b>Margem:</b> ${r["Margem"]}<br>` : ''}
+          ${r["Elegível"] ? `<b>Elegível:</b> ${r["Elegível"]}<br>` : ''}
+          <b>Status:</b> <span style="color:${corStatus};font-weight:bold;">${r.Status}</span><br>
+          <b>Mensagem:</b> ${r.Mensagem || '-'}
+        </div>`;
+
+          pushLinha(html, cpfNorm, (r.Status || "").toLowerCase() !== "autorizado");
+
+          const idx = resultadosGerais.findIndex(x => x.CPF === cpfNorm);
+          const novo = {
+            CPF: cpfNorm,
+            nome: r["Nome"],
+            data_nascimento: r["Data Nascimento"],
+            data_admissao: r["Data Admissao"],
+            valor_liberado: r["Valor Liberado"],
+            margem: r["Margem"],
+            elegivel: r["Elegível"],
+            status: r["Status"],
+            mensagem: r["Mensagem"]
+          };
+          if (idx >= 0) resultadosGerais[idx] = novo;
+          else resultadosGerais.push(novo);
+        });
+
+        atualizarContador();
+      } catch (e) {
+        console.error("Erro atualização:", e);
+      } finally {
+        atualizandoStatus = false;
+      }
+    }
+
+    setInterval(atualizarStatusLote, 3000);
+
+    async function baixarExcel() {
+      const res = await fetch("/baixar-excel", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ resultados: resultadosGerais })
+      });
+      const blob = await res.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "resultado_consulta.xlsx";
+      a.click();
+      window.URL.revokeObjectURL(url);
+    }
+
+    async function limparCampos() {
+      await fetch("/parar", { method: "POST" });
+      consultaAtiva = false;
+      document.getElementById("cpfs").value = "";
+      document.getElementById("result").innerHTML = "";
+      document.getElementById("progressBar").style.width = "0%";
+      document.getElementById("progressText").innerText = "0%";
+      document.getElementById("contador").innerText = "";
+      document.getElementById("loteInfo").textContent = "";
+      resultadosGerais = [];
+      currentLoteId = null;
+    }
+
+    function recuperarConsultas() {
+      const url = currentLoteId
+        ? `/recuperar-consultas-excel?lote_id=${encodeURIComponent(currentLoteId)}`
+        : `/recuperar-consultas-excel`;
+      window.location.href = url;
+    }
+  </script>
+
+</body>
+
+</html>
