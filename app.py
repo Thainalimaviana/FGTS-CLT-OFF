@@ -466,7 +466,10 @@ def baixar_excel():
 
                 dados = []
                 for cpf, resultado, data in consultas:
-                    partes = {k.strip(): v.strip() for k, v in (p.split(":") for p in resultado.split(",") if ":" in p)}
+                    partes = {
+                        k.strip(): v.strip()
+                        for k, v in (p.split(":") for p in resultado.split(",") if ":" in p)
+                    }
                     dados.append({
                         "CPF": cpf,
                         "Nome": partes.get("Nome", "-"),
@@ -490,10 +493,13 @@ def baixar_excel():
     with pd.ExcelWriter(output, engine="openpyxl") as writer:
         df.to_excel(writer, index=False, sheet_name="Resultados")
     output.seek(0)
+
+    download_name = f"FGTS_FACTA_CLT_OFF_{datetime.now():%d-%m_%Hh%M}.xlsx"
+
     return send_file(
         output,
         as_attachment=True,
-        download_name="resultado_consulta.xlsx",
+        download_name=download_name,
         mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     )
 
