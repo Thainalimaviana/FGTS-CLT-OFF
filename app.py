@@ -494,7 +494,7 @@ def baixar_excel():
         df.to_excel(writer, index=False, sheet_name="Resultados")
     output.seek(0)
 
-    download_name = f"FGTS_FACTA_CLT_OFF_{datetime.now():%d-%m_%Hh%M}.xlsx"
+    download_name = f"FGTS_FACTA_CLT_ON_{datetime.now():%d-%m_%Hh%M}.xlsx"
 
     return send_file(
         output,
